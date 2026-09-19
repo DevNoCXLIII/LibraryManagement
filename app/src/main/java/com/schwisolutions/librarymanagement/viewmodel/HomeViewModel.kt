@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.schwisolutions.librarymanagement.LibraryApplication
+import com.schwisolutions.librarymanagement.data.ImageStorageHelper
 import com.schwisolutions.librarymanagement.data.entity.Book
 import com.schwisolutions.librarymanagement.repository.`interface`.BookRepository
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,21 +25,35 @@ class HomeViewModel(private val bookRepository: BookRepository) : ViewModel() {
             initialValue = HomeUiState()
         )
 
-    fun addNewBook(title: String, author: String, releaseDate: String, genre: String) {
+    fun addNewBook(
+        title: String,
+        author: String,
+        releaseDate: String,
+        genre: String,
+        imagePath: String? = null
+    ) {
         viewModelScope.launch {
             val newBook = Book(
                 title = title,
                 author = author,
                 releaseDate = releaseDate,
-                genre = genre
+                genre = genre,
+                imagePath = imagePath
             )
 
             bookRepository.insertBook(newBook)
         }
     }
 
+    fun updateBook(book: Book) {
+        viewModelScope.launch {
+            bookRepository.updateBook(book)
+        }
+    }
+
     fun deleteBook(book: Book) {
         viewModelScope.launch {
+            ImageStorageHelper.deleteImage(book.imagePath)
             bookRepository.deleteBook(book)
         }
     }
@@ -53,6 +68,10 @@ object AppViewModelProvider {
         initializer {
             val application = (this[APPLICATION_KEY] as LibraryApplication)
             HomeViewModel(bookRepository = application.container.bookRepository)
+        }
+        initializer {
+            val application = (this[APPLICATION_KEY] as LibraryApplication)
+            DetailViewModel(bookRepository = application.container.bookRepository)
         }
     }
 }

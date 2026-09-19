@@ -8,7 +8,7 @@ import com.schwisolutions.librarymanagement.data.dao.BookDao
 import com.schwisolutions.librarymanagement.data.entity.Book
 
 
-@Database(entities = [Book::class], version = 1, exportSchema = false)
+@Database(entities = [Book::class], version = 2, exportSchema = false)
 abstract class LibraryDatabase : RoomDatabase() {
     abstract fun bookDao() : BookDao
 
@@ -23,6 +23,7 @@ abstract class LibraryDatabase : RoomDatabase() {
                     LibraryDatabase::class.java,
                     "library_database"
                 )
+                    .fallbackToDestructiveMigration(true)
                     .build()
                     .also { Instance = it }
             }

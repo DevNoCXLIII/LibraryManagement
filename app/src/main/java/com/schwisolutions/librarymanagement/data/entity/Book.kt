@@ -11,4 +11,5 @@ data class Book (
     val author: String,
     val releaseDate: String,
     val genre: String,
+    val imagePath: String? = null
 )
