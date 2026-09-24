@@ -7,14 +7,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,9 +40,21 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.schwisolutions.librarymanagement.data.ImageStorageHelper
 import com.schwisolutions.librarymanagement.viewmodel.AppViewModelProvider
 import com.schwisolutions.librarymanagement.viewmodel.DetailViewModel
 
+/**
+ * Screen displaying full details of a selected book.
+ *
+ * Official docs reference:
+ * - developer.android.com/develop/ui/compose/state#collectasstate
+ * - developer.android.com/develop/ui/compose/components/card
+ *
+ * @param bookId Primary key ID of the book to display.
+ * @param onBackClick Callback to navigate back to the previous screen.
+ * @param viewModel DetailViewModel providing the book stream.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailsScreen(
@@ -47,6 +62,7 @@ fun DetailsScreen(
     onBackClick: () -> Unit,
     viewModel: DetailViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
+    // Collect the book Flow as Compose state with initial value null (loading)
     val book by viewModel.getBookStream(bookId).collectAsState(initial = null)
 
     Scaffold(
@@ -77,11 +93,20 @@ fun DetailsScreen(
         ) {
             val currentBook = book
             if (currentBook == null) {
-                Box(
+                Column(
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    CircularProgressIndicator()
+                    Text(
+                        text = "Book not found or has been deleted.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = onBackClick) {
+                        Text("Go Back")
+                    }
                 }
             } else {
                 Card(
@@ -94,9 +119,11 @@ fun DetailsScreen(
                             .padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        // Decode cover image with safe downsampling
                         val bitmap = remember(currentBook.imagePath) {
-                            currentBook.imagePath?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() }
+                            ImageStorageHelper.loadThumbnail(currentBook.imagePath, reqWidth = 280, reqHeight = 360)?.asImageBitmap()
                         }
+
                         Box(
                             modifier = Modifier
                                 .size(width = 140.dp, height = 180.dp)
@@ -138,6 +165,9 @@ fun DetailsScreen(
     }
 }
 
+/**
+ * Reusable two-column row displaying metadata label and value.
+ */
 @Composable
 private fun DetailRow(label: String, value: String) {
     Row(

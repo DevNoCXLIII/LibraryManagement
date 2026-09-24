@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!--
+      LibraryApplication:
+      - Custom Application class instantiated before any activity or service.
+      - Holds the AppContainer for manual dependency injection.
+    -->
     <application
         android:allowBackup="true"
         android:name=".LibraryApplication"
@@ -12,6 +17,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.LibraryManagement">
+
+        <!--
+          MainActivity:
+          - Single-activity entry point hosting Compose NavHost.
+          - Exported with MAIN and LAUNCHER filters to show in the app drawer.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -19,19 +30,15 @@
             android:theme="@style/Theme.LibraryManagement">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
+
+        <!--
+          Note: No <provider> for FileProvider is needed.
+          Image capture uses ActivityResultContracts.TakePicturePreview(), which returns
+          a Bitmap directly to the app without requiring content URIs or file provider configuration.
+        -->
     </application>
 
 </manifest>

@@ -20,7 +20,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
@@ -55,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.schwisolutions.librarymanagement.data.ImageStorageHelper
@@ -62,22 +66,34 @@ import com.schwisolutions.librarymanagement.data.entity.Book
 import com.schwisolutions.librarymanagement.viewmodel.AppViewModelProvider
 import com.schwisolutions.librarymanagement.viewmodel.HomeViewModel
 
+/**
+ * Main dashboard screen displaying the searchable book list, Add Book FAB,
+ * and dialogs for creating, editing, and deleting books.
+ *
+ * Official docs reference:
+ * - developer.android.com/develop/ui/compose/components/scaffold
+ * - developer.android.com/develop/ui/compose/lists
+ * - developer.android.com/develop/ui/compose/components/dialog
+ *
+ * @param onViewBook Callback invoked when the user selects "View" on a book, passing its bookId.
+ * @param viewModel HomeViewModel providing the reactive book list and CRUD methods.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    onViewBook: (Int) -> Unit, // Navigation callback
+    onViewBook: (Int) -> Unit,
     viewModel: HomeViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
-    // 1. Observe the database state
+    // 1. Observe Room database state via StateFlow
     val uiState by viewModel.homeUiState.collectAsState()
 
-    // 2. State for controlling dialogs
+    // 2. Dialog state holders
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var bookToEdit by remember { mutableStateOf<Book?>(null) }
     var bookToDelete by remember { mutableStateOf<Book?>(null) }
 
-    // 3. State for the Search Bar
-    var searchQuery by remember { mutableStateOf("") }
+    // 3. Search query state
+    var searchQuery by rememberSaveable { mutableStateOf("") }
 
     Scaffold(
         topBar = {
@@ -101,7 +117,7 @@ fun MainScreen(
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
         ) {
-            // Search Module
+            // Search input field
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -112,33 +128,32 @@ fun MainScreen(
                     .padding(vertical = 8.dp)
             )
 
-            // Main List of Books
+            // Book list with in-memory filtering
+            // Rationale for 6-hour test: In-memory filtering is immediate and avoids complex Flow pipelines.
+            val filteredBooks = uiState.bookList.filter {
+                it.title.contains(searchQuery, ignoreCase = true)
+            }
+
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 80.dp) // Prevents FAB from hiding last item
+                contentPadding = PaddingValues(bottom = 80.dp) // Offset for FAB
             ) {
-                // Simple search filter implementation
-                val filteredBooks = uiState.bookList.filter {
-                    it.title.contains(searchQuery, ignoreCase = true)
-                }
-
-                items(filteredBooks) { book ->
+                items(filteredBooks, key = { it.bookId }) { book ->
                     BookListItem(
                         book = book,
-                        onViewClick = { onViewBook(book.bookId) }, // Triggers navigation!
+                        onViewClick = { onViewBook(book.bookId) },
                         onEditClick = { bookToEdit = book },
-                        onDeleteClick = {
-                            bookToDelete = book // Set the book to trigger the confirmation dialog
-                        }
+                        onDeleteClick = { bookToDelete = book }
                     )
                 }
             }
         }
 
-        // Add Book Form Dialog
+        // Add Book Dialog (using unified BookFormDialog)
         if (showAddDialog) {
-            AddBookDialog(
+            BookFormDialog(
+                titleText = "Add a New Book",
                 onDismiss = { showAddDialog = false },
                 onConfirm = { title, author, releaseDate, genre, imagePath ->
                     viewModel.addNewBook(title, author, releaseDate, genre, imagePath)
@@ -147,19 +162,28 @@ fun MainScreen(
             )
         }
 
-        // Edit Book Form Dialog
+        // Edit Book Dialog (using unified BookFormDialog with initial data)
         bookToEdit?.let { book ->
-            EditBookDialog(
-                book = book,
+            BookFormDialog(
+                titleText = "Edit Book",
+                initialBook = book,
                 onDismiss = { bookToEdit = null },
-                onConfirm = { updatedBook ->
-                    viewModel.updateBook(updatedBook)
+                onConfirm = { title, author, releaseDate, genre, imagePath ->
+                    viewModel.updateBook(
+                        book.copy(
+                            title = title,
+                            author = author,
+                            releaseDate = releaseDate,
+                            genre = genre,
+                            imagePath = imagePath
+                        )
+                    )
                     bookToEdit = null
                 }
             )
         }
 
-        // Delete Confirmation Dialog (Requirement: "action confirmation" )
+        // Delete Confirmation Dialog
         bookToDelete?.let { book ->
             AlertDialog(
                 onDismissRequest = { bookToDelete = null },
@@ -181,6 +205,14 @@ fun MainScreen(
     }
 }
 
+/**
+ * List item card displaying thumbnail, title, publication year, and options dropdown.
+ *
+ * @param book Book entity to display.
+ * @param onViewClick Callback to navigate to details screen.
+ * @param onEditClick Callback to open edit dialog.
+ * @param onDeleteClick Callback to open delete confirmation.
+ */
 @Composable
 fun BookListItem(
     book: Book,
@@ -201,9 +233,11 @@ fun BookListItem(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Decode image from local file path with safe downsampling
             val bitmap = remember(book.imagePath) {
-                book.imagePath?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() }
+                ImageStorageHelper.loadThumbnail(book.imagePath, reqWidth = 100, reqHeight = 100)?.asImageBitmap()
             }
+
             Box(
                 modifier = Modifier
                     .size(50.dp)
@@ -219,6 +253,7 @@ fun BookListItem(
                         contentScale = ContentScale.Crop
                     )
                 } else {
+                    // Note: Icons.Default.Star is part of core icons; no material-icons-extended dependency required.
                     Icon(
                         imageVector = Icons.Default.Star,
                         contentDescription = "Book Icon",
@@ -230,18 +265,15 @@ fun BookListItem(
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                // Display Title and Publication Year
                 Text(text = book.title, style = MaterialTheme.typography.titleMedium)
                 Text(text = "Year: ${book.releaseDate}", style = MaterialTheme.typography.bodyMedium)
             }
 
             Box {
-                // Ellipsis Button
                 IconButton(onClick = { expanded = true }) {
                     Icon(imageVector = Icons.Default.MoreVert, contentDescription = "Options")
                 }
 
-                // PopupMenu
                 DropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
@@ -264,6 +296,9 @@ fun BookListItem(
     }
 }
 
+/**
+ * Chooser modal to select between Camera and Gallery.
+ */
 @Composable
 fun ImageChooserDialog(
     onDismiss: () -> Unit,
@@ -318,30 +353,51 @@ fun ImageChooserDialog(
     )
 }
 
+/**
+ * Unified form dialog for creating and editing books.
+ *
+ * Rationale for 6-hour recreation:
+ * - Unifying Add and Edit into one dialog saves ~150 lines of duplicate code.
+ * - Uses ActivityResultContracts.TakePicturePreview() which returns a Bitmap directly.
+ *   This avoids FileProvider, XML file_paths, and temporary URI generation.
+ * - Uses ActivityResultContracts.GetContent() with an image MIME type for gallery picking.
+ *
+ * @param titleText Dialog header title ("Add a New Book" or "Edit Book").
+ * @param initialBook Optional existing Book if editing, or null if adding.
+ * @param onDismiss Invoked when the dialog is dismissed.
+ * @param onConfirm Invoked with validated form values when user saves.
+ */
 @Composable
-fun AddBookDialog(
+fun BookFormDialog(
+    titleText: String,
+    initialBook: Book? = null,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, String, String, String?) -> Unit
+    onConfirm: (title: String, author: String, releaseDate: String, genre: String, imagePath: String?) -> Unit
 ) {
-    var title by rememberSaveable { mutableStateOf("") }
-    var author by rememberSaveable { mutableStateOf("") }
-    var releaseDate by rememberSaveable { mutableStateOf("") }
-    var genre by rememberSaveable { mutableStateOf("") }
-    var imagePath by rememberSaveable { mutableStateOf<String?>(null) }
-    var tempCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var title by rememberSaveable { mutableStateOf(initialBook?.title ?: "") }
+    var author by rememberSaveable { mutableStateOf(initialBook?.author ?: "") }
+    var releaseDate by rememberSaveable { mutableStateOf(initialBook?.releaseDate ?: "") }
+    var genre by rememberSaveable { mutableStateOf(initialBook?.genre ?: "") }
+    var imagePath by rememberSaveable { mutableStateOf(initialBook?.imagePath) }
     var showChooser by rememberSaveable { mutableStateOf(false) }
 
+    var isTitleError by rememberSaveable { mutableStateOf(false) }
+    var isAuthorError by rememberSaveable { mutableStateOf(false) }
+
+    val scrollState = rememberScrollState()
     val context = LocalContext.current
+
+    // Camera launcher: TakePicturePreview returns a Bitmap directly.
+    // No FileProvider, no XML configuration, and no content URI setup required.
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success && tempCameraPath != null) {
-            imagePath = tempCameraPath
-        } else if (!success && tempCameraPath != null) {
-            ImageStorageHelper.deleteImage(tempCameraPath)
-            tempCameraPath = null
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            imagePath = ImageStorageHelper.saveBitmap(context, bitmap)
         }
     }
+
+    // Gallery launcher: GetContent returns the image Uri, which ImageStorageHelper decodes and saves.
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -353,27 +409,25 @@ fun AddBookDialog(
     if (showChooser) {
         ImageChooserDialog(
             onDismiss = { showChooser = false },
-            onTakePhoto = {
-                val file = ImageStorageHelper.createTempImageFile(context)
-                tempCameraPath = file.absolutePath
-                val uri = ImageStorageHelper.getUriForFile(context, file)
-                cameraLauncher.launch(uri)
-            },
+            onTakePhoto = { cameraLauncher.launch(null) },
             onChooseGallery = { galleryLauncher.launch("image/*") }
         )
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add a New Book") },
+        title = { Text(titleText) },
         text = {
             Column(
+                modifier = Modifier.verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Cover image preview box with safe downsampled thumbnail
                 val bitmap = remember(imagePath) {
-                    imagePath?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() }
+                    ImageStorageHelper.loadThumbnail(imagePath, reqWidth = 200, reqHeight = 240)?.asImageBitmap()
                 }
+
                 Box(
                     modifier = Modifier
                         .size(width = 100.dp, height = 120.dp)
@@ -401,17 +455,61 @@ fun AddBookDialog(
                     }
                 }
 
-                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") })
-                OutlinedTextField(value = author, onValueChange = { author = it }, label = { Text("Author") })
-                OutlinedTextField(value = releaseDate, onValueChange = { releaseDate = it }, label = { Text("Publication Year") })
-                OutlinedTextField(value = genre, onValueChange = { genre = it }, label = { Text("Genre") })
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = {
+                        title = it
+                        if (it.isNotBlank()) isTitleError = false
+                    },
+                    label = { Text("Title *") },
+                    isError = isTitleError,
+                    supportingText = if (isTitleError) {
+                        { Text("Title cannot be empty") }
+                    } else null,
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = author,
+                    onValueChange = {
+                        author = it
+                        if (it.isNotBlank()) isAuthorError = false
+                    },
+                    label = { Text("Author *") },
+                    isError = isAuthorError,
+                    supportingText = if (isAuthorError) {
+                        { Text("Author cannot be empty") }
+                    } else null,
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = releaseDate,
+                    onValueChange = { releaseDate = it },
+                    label = { Text("Publication Year") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = genre,
+                    onValueChange = { genre = it },
+                    label = { Text("Genre") },
+                    singleLine = true
+                )
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    if (title.isNotBlank() && author.isNotBlank()) {
-                        onConfirm(title, author, releaseDate, genre, imagePath)
+                    val hasTitle = title.isNotBlank()
+                    val hasAuthor = author.isNotBlank()
+                    if (!hasTitle) isTitleError = true
+                    if (!hasAuthor) isAuthorError = true
+
+                    if (hasTitle && hasAuthor) {
+                        // Clean up old image if replaced during edit
+                        if (initialBook != null && imagePath != initialBook.imagePath) {
+                            ImageStorageHelper.deleteImage(initialBook.imagePath)
+                        }
+                        onConfirm(title.trim(), author.trim(), releaseDate.trim(), genre.trim(), imagePath)
                     }
                 }
             ) { Text("Save") }
@@ -421,121 +519,3 @@ fun AddBookDialog(
         }
     )
 }
-
-@Composable
-fun EditBookDialog(
-    book: Book,
-    onDismiss: () -> Unit,
-    onConfirm: (Book) -> Unit
-) {
-    var title by rememberSaveable { mutableStateOf(book.title) }
-    var author by rememberSaveable { mutableStateOf(book.author) }
-    var releaseDate by rememberSaveable { mutableStateOf(book.releaseDate) }
-    var genre by rememberSaveable { mutableStateOf(book.genre) }
-    var imagePath by rememberSaveable { mutableStateOf(book.imagePath) }
-    var tempCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
-    var showChooser by rememberSaveable { mutableStateOf(false) }
-
-    val context = LocalContext.current
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success && tempCameraPath != null) {
-            imagePath = tempCameraPath
-        } else if (!success && tempCameraPath != null) {
-            ImageStorageHelper.deleteImage(tempCameraPath)
-            tempCameraPath = null
-        }
-    }
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            imagePath = ImageStorageHelper.saveUri(context, uri)
-        }
-    }
-
-    if (showChooser) {
-        ImageChooserDialog(
-            onDismiss = { showChooser = false },
-            onTakePhoto = {
-                val file = ImageStorageHelper.createTempImageFile(context)
-                tempCameraPath = file.absolutePath
-                val uri = ImageStorageHelper.getUriForFile(context, file)
-                cameraLauncher.launch(uri)
-            },
-            onChooseGallery = { galleryLauncher.launch("image/*") }
-        )
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit Book") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                val bitmap = remember(imagePath) {
-                    imagePath?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() }
-                }
-                Box(
-                    modifier = Modifier
-                        .size(width = 100.dp, height = 120.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable { showChooser = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap,
-                            contentDescription = "Cover Preview",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Add Cover")
-                            Text("Add Cover", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-
-                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") })
-                OutlinedTextField(value = author, onValueChange = { author = it }, label = { Text("Author") })
-                OutlinedTextField(value = releaseDate, onValueChange = { releaseDate = it }, label = { Text("Publication Year") })
-                OutlinedTextField(value = genre, onValueChange = { genre = it }, label = { Text("Genre") })
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    if (title.isNotBlank() && author.isNotBlank()) {
-                        if (imagePath != book.imagePath) {
-                            ImageStorageHelper.deleteImage(book.imagePath)
-                        }
-                        onConfirm(
-                            book.copy(
-                                title = title,
-                                author = author,
-                                releaseDate = releaseDate,
-                                genre = genre,
-                                imagePath = imagePath
-                            )
-                        )
-                    }
-                }
-            ) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
-}
-
-

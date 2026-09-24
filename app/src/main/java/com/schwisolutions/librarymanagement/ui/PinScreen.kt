@@ -30,8 +30,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+/**
+ * Hardcoded 4-digit PIN for authentication.
+ */
 private const val CORRECT_PIN = "1234"
 
+/**
+ * PIN verification lock screen protecting app access.
+ *
+ * Official docs reference:
+ * - developer.android.com/develop/ui/compose/state#save-ui-state
+ *
+ * Mechanics:
+ * - Uses rememberSaveable so entered PIN survives screen rotation.
+ * - Displays 4 circular dots that fill as digits are entered.
+ * - Validates automatically when the 4th digit is pressed.
+ * - On success, invokes onLoginSuccess() which pops the PIN screen off the backstack.
+ *
+ * @param onLoginSuccess Callback triggered when the correct PIN (1234) is entered.
+ */
 @Composable
 fun PinScreen(onLoginSuccess: () -> Unit) {
     var pin by rememberSaveable { mutableStateOf("") }
@@ -89,7 +106,7 @@ fun PinScreen(onLoginSuccess: () -> Unit) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // PIN Indicator Dots
+        // PIN Indicator Dots: 4 circles representing the 4 digits
         Row(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -130,7 +147,7 @@ fun PinScreen(onLoginSuccess: () -> Unit) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Keypad Grid
+        // Keypad Grid: 3x4 layout (1-9, C, 0, Backspace)
         Column(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -149,7 +166,7 @@ fun PinScreen(onLoginSuccess: () -> Unit) {
                 }
             }
 
-            // Bottom Row: Clear, 0, Delete
+            // Bottom Row: Clear ('C'), '0', Delete (Backspace icon)
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 Surface(
                     onClick = { onClearPress() },
@@ -187,6 +204,9 @@ fun PinScreen(onLoginSuccess: () -> Unit) {
     }
 }
 
+/**
+ * Circular keypad button for numeric entry.
+ */
 @Composable
 private fun KeypadButton(
     text: String,

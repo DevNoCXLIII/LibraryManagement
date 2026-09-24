@@ -6,6 +6,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
+/**
+ * Local JVM unit tests for ImageStorageHelper.
+ *
+ * Official docs reference:
+ * - developer.android.com/training/testing/local-tests
+ */
 class ImageStorageHelperTest {
 
     @Test

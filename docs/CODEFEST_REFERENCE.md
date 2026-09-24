@@ -1,232 +1,244 @@
 # Codefest Reference Guide: Library Management
 
-This guide documents every file in the project, explains its mechanism, and points to the exact section in the official Android developer documentation (`developer.android.com`).
+This guide documents every file in the project, explains its mechanism, points to the exact section in official Android developer documentation (`developer.android.com`), and highlights practical patterns for a 6-hour offline coding exam.
 
 ---
 
-## 1. Build and Configuration
+## 1. Quick Reference: 6-Hour Exam Strategy
+
+When building this application from scratch in a time-constrained environment without outside sources:
+
+1. **Avoid FileProvider**:
+   - Do not use `FileProvider`, `file_paths.xml`, or `ActivityResultContracts.TakePicture()`.
+   - Use `ActivityResultContracts.TakePicturePreview()`. It returns a `Bitmap?` directly. This requires zero XML files and zero manifest changes.
+2. **Avoid keyword packages**:
+   - Keep repository classes in `com.schwisolutions.librarymanagement.repository`.
+   - Never use reserved words like `interface` as package names (`repository.interface` requires cumbersome backticks).
+3. **Unify form dialogs**:
+   - Combine Add and Edit dialogs into a single `BookFormDialog`. This cuts ~150 lines of duplicate code.
+4. **Use in-memory filtering for search**:
+   - Filter `uiState.bookList.filter { it.title.contains(query, ignoreCase = true) }` directly in Compose. It avoids writing reactive search query flows.
+5. **Use core icons**:
+   - Use `Icons.Default.Add`, `Icons.Default.Search`, `Icons.Default.MoreVert`, `Icons.Default.Star`, `Icons.Default.Lock`, `Icons.Default.Delete`.
+   - These are included in the default `material3` library. They do not require `androidx.compose.material:material-icons-extended`.
+
+---
+
+## 2. Build and Configuration
 
 ### [gradle/libs.versions.toml](file:///home/schwi/Projects/LibraryManagement/gradle/libs.versions.toml)
-- **Purpose**: Defines dependencies, versions, and plugins in a centralized TOML version catalog.
-- **Key contents**: AGP, Kotlin, Compose BOM, Room, Navigation Compose, and Kotlinx Serialization versions and libraries.
+- **Purpose**: Centralized version catalog for dependencies and plugins.
+- **Key libraries**:
+  - `androidx-room-runtime` and `androidx-room-compiler` (Room database)
+  - `androidx-navigation-compose-android` (Navigation Compose)
+  - `kotlinx-serialization-json` (Type-safe navigation routes)
+  - `androidx-lifecycle-viewmodel-compose` (ViewModel integration in Compose)
 - **Official documentation**:
   - Search: "Migrate to version catalogs"
-  - Path: `developer.android.com/build/migrate-to-catalogs`
-
-### [build.gradle.kts](file:///home/schwi/Projects/LibraryManagement/build.gradle.kts)
-- **Purpose**: Root-level Gradle build file. Configures top-level plugins without applying them.
-- **Official documentation**:
-  - Search: "Configure your build"
-  - Path: `developer.android.com/build`
+  - URL: `developer.android.com/build/migrate-to-catalogs`
 
 ### [app/build.gradle.kts](file:///home/schwi/Projects/LibraryManagement/app/build.gradle.kts)
-- **Purpose**: Module-level build script for the Android application.
-- **Key contents**:
-  - `plugins`: Android application, Kotlin Compose, Kotlin Serialization, KSP.
-  - `android`: `compileSdk = 36`, `minSdk = 24`, `targetSdk = 36`, `compose = true`.
-  - `dependencies`: Room runtime and compiler (KSP), Compose BOM, Navigation Compose, Lifecycle runtime and ViewModel.
+- **Purpose**: Module-level build script.
+- **Key plugins**:
+  - `alias(libs.plugins.android.application)`
+  - `alias(libs.plugins.kotlin.compose)`
+  - `kotlin("plugin.serialization")`
+  - `id("com.google.devtools.ksp")`
+- **Key configuration**:
+  - `compileSdk = 36`, `minSdk = 24`, `targetSdk = 36`
+  - `buildFeatures { compose = true }`
 - **Official documentation**:
-  - Search: "Configure build variants" / "Dependencies in Gradle"
-  - Path: `developer.android.com/build/dependencies`
+  - Search: "Configure your build" / "Dependencies in Gradle"
+  - URL: `developer.android.com/build/dependencies`
 
 ---
 
-## 2. Android Manifest and App Lifecycle
+## 3. App Entry and Manifest
 
 ### [app/src/main/AndroidManifest.xml](file:///home/schwi/Projects/LibraryManagement/app/src/main/AndroidManifest.xml)
-- **Purpose**: Declares application components, app name, launcher icon, activities, and content providers.
-- **Key components**:
-  - `android:name=".LibraryApplication"`: Registers the custom `Application` subclass.
-  - `MainActivity`: Main entry point with `MAIN` and `LAUNCHER` intent filters.
-  - `FileProvider`: Grants secure content URIs for camera photo captures.
+- **Purpose**: Registers application components, custom Application class, and main Activity.
+- **Key declarations**:
+  - `android:name=".LibraryApplication"`: Informs Android to instantiate our custom Application subclass on boot.
+  - `MainActivity`: Single activity entry point with `MAIN` and `LAUNCHER` intent filters.
+  - *No FileProvider needed*: `TakePicturePreview()` bypasses content URI requirements.
 - **Official documentation**:
-  - Search: "App manifest overview" / "FileProvider"
-  - Path: `developer.android.com/guide/topics/manifest/manifest-intro`
-  - Path: `developer.android.com/reference/androidx/core/content/FileProvider`
-
-### [app/src/main/res/xml/file_paths.xml](file:///home/schwi/Projects/LibraryManagement/app/src/main/res/xml/file_paths.xml)
-- **Purpose**: Specifies directory paths accessible via `FileProvider`.
-- **Key configuration**: `<files-path name="book_images" path="book_images/" />` maps the internal `context.filesDir/book_images/` directory.
-- **Official documentation**:
-  - Search: "FileProvider setting up provider"
-  - Path: `developer.android.com/reference/androidx/core/content/FileProvider#SettingUpProvider`
+  - Search: "App manifest overview"
+  - URL: `developer.android.com/guide/topics/manifest/manifest-intro`
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/LibraryApplication.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/LibraryApplication.kt)
-- **Purpose**: Custom `Application` class that initializes app-level state before any activity starts.
-- **Key mechanism**: Instantiates `AppContainer` (`AppDataContainer(this)`) as a manual dependency injection container.
+- **Purpose**: Custom `Application` class maintaining the app-level dependency injection container.
+- **Mechanism**: Initializes `container = AppDataContainer(this)` in `onCreate()`.
 - **Official documentation**:
   - Search: "Application class" / "Manual dependency injection"
-  - Path: `developer.android.com/reference/android/app/Application`
-  - Path: `developer.android.com/training/dependency-injection/manual`
+  - URL: `developer.android.com/reference/android/app/Application`
+  - URL: `developer.android.com/training/dependency-injection/manual`
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/AppContainer.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/AppContainer.kt)
-- **Purpose**: Manual dependency injection container interface and implementation.
-- **Key mechanism**: `AppDataContainer` lazily initializes `OfflineBookRepository` by injecting `LibraryDatabase.getDatabase(context).bookDao()`.
+- **Purpose**: Manual dependency injection container.
+- **Mechanism**: `AppDataContainer` lazily initializes `OfflineBookRepository` by injecting `LibraryDatabase.getDatabase(context).bookDao()`.
 - **Official documentation**:
   - Search: "Manual dependency injection"
-  - Path: `developer.android.com/training/dependency-injection/manual#app-container`
+  - URL: `developer.android.com/training/dependency-injection/manual#app-container`
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/MainActivity.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/MainActivity.kt)
-- **Purpose**: Single activity host for Jetpack Compose UI.
-- **Key mechanism**: Calls `enableEdgeToEdge()` and `setContent { LibraryManagementTheme { LibraryNavigation() } }`.
+- **Purpose**: Single activity hosting the Compose UI.
+- **Mechanism**: Calls `enableEdgeToEdge()` and sets `LibraryManagementTheme { Scaffold { LibraryNavigation() } }`.
 - **Official documentation**:
   - Search: "Compose setup in Activity"
-  - Path: `developer.android.com/develop/ui/compose/setup#activity`
+  - URL: `developer.android.com/develop/ui/compose/setup#activity`
 
 ---
 
-## 3. Data Layer (Room and Storage)
+## 4. Data Layer (Room and Storage)
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/data/entity/Book.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/data/entity/Book.kt)
-- **Purpose**: Room entity representing the `book` SQLite database table.
-- **Key annotations and fields**:
+- **Purpose**: Room entity representing SQLite table `book`.
+- **Annotations and fields**:
   - `@Entity(tableName = "book")`
   - `@PrimaryKey(autoGenerate = true) val bookId: Int = 0`
-  - `title`, `author`, `releaseDate`, `genre`, and `imagePath: String? = null`.
+  - `title: String`, `author: String`, `releaseDate: String`, `genre: String`
+  - `imagePath: String? = null` (stores internal absolute file path)
 - **Official documentation**:
   - Search: "Define data using Room entities"
-  - Path: `developer.android.com/training/data-storage/room/defining-data`
+  - URL: `developer.android.com/training/data-storage/room/defining-data`
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/data/dao/BookDao.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/data/dao/BookDao.kt)
-- **Purpose**: Data Access Object (DAO) defining SQLite database operations.
+- **Purpose**: Data Access Object defining SQLite operations.
 - **Key methods**:
   - `@Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertBook(book: Book)`
   - `@Update suspend fun updateBook(book: Book)`
   - `@Delete suspend fun deleteBook(book: Book)`
   - `@Query("SELECT * FROM book ORDER BY title ASC") fun getAllBooks(): Flow<List<Book>>`
-  - `@Query("SELECT * FROM book WHERE bookId=:bookId") fun getBookById(bookId: Int): Flow<Book>`
-  - `@Query("SELECT * FROM book WHERE title LIKE '%' || :searchQuery || '%'") fun searchBooks(searchQuery: String): Flow<List<Book>>`
+  - `@Query("SELECT * FROM book WHERE bookId = :bookId") fun getBookById(bookId: Int): Flow<Book>`
 - **Official documentation**:
   - Search: "Accessing data using Room DAOs" / "Write asynchronous DAO queries"
-  - Path: `developer.android.com/training/data-storage/room/accessing-data`
-  - Path: `developer.android.com/training/data-storage/room/async-queries`
+  - URL: `developer.android.com/training/data-storage/room/accessing-data`
+  - URL: `developer.android.com/training/data-storage/room/async-queries`
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/data/LibraryDatabase.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/data/LibraryDatabase.kt)
-- **Purpose**: Room database singleton class.
-- **Key annotations and configuration**:
+- **Purpose**: Room database singleton.
+- **Key configuration**:
   - `@Database(entities = [Book::class], version = 2, exportSchema = false)`
-  - Singleton pattern via `Instance ?: synchronized(this) { Room.databaseBuilder(...).fallbackToDestructiveMigration(true).build() }`.
+  - Double-checked locking singleton with `@Volatile private var Instance: LibraryDatabase? = null`.
+  - `.fallbackToDestructiveMigration(true)` to rebuild tables on schema changes without manual migration scripts.
 - **Official documentation**:
   - Search: "Room database class"
-  - Path: `developer.android.com/training/data-storage/room#database`
+  - URL: `developer.android.com/training/data-storage/room#database`
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/data/ImageStorageHelper.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/data/ImageStorageHelper.kt)
-- **Purpose**: Manages file I/O for book cover images in internal storage.
+- **Purpose**: Manages JPEG file persistence in private app storage (`context.filesDir/book_images/`).
 - **Key methods**:
-  - `createTempImageFile(context)`: Generates a unique JPEG file in `context.filesDir/book_images/`.
-  - `getUriForFile(context, file)`: Creates a content URI via `FileProvider.getUriForFile`.
-  - `saveBitmap(context, bitmap)`: Compresses a bitmap to JPEG (90% quality) and writes to disk.
-  - `saveUri(context, uri)`: Reads an `InputStream` from `contentResolver`, decodes with `BitmapFactory.decodeStream`, and saves to disk.
-  - `deleteImage(path)`: Deletes file from internal storage.
+  - `saveBitmap(context, bitmap)`: Compresses Bitmap to JPEG (90% quality) and writes to disk. Returns absolute file path.
+  - `saveUri(context, uri)`: Reads `InputStream` from `contentResolver`, decodes with `BitmapFactory.decodeStream`, and saves via `saveBitmap`.
+  - `deleteImage(path)`: Safely deletes the file if it exists.
 - **Official documentation**:
-  - Search: "Internal storage app-specific" / "Bitmap and BitmapFactory"
-  - Path: `developer.android.com/training/data-storage/app-specific#internal-access-files`
-  - Path: `developer.android.com/reference/android/graphics/BitmapFactory`
+  - Search: "Internal storage app-specific" / "BitmapFactory"
+  - URL: `developer.android.com/training/data-storage/app-specific#internal-access-files`
+  - URL: `developer.android.com/reference/android/graphics/BitmapFactory`
 
-### [app/src/main/java/com/schwisolutions/librarymanagement/repository/interface/BookRepository.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/repository/interface/BookRepository.kt)
-- **Purpose**: Repository interface abstracting data sources from the UI layer.
+### [app/src/main/java/com/schwisolutions/librarymanagement/repository/BookRepository.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/repository/BookRepository.kt)
+- **Purpose**: Repository interface abstracting data sources.
 - **Official documentation**:
   - Search: "Guide to app architecture - Data layer"
-  - Path: `developer.android.com/topic/architecture/data-layer`
+  - URL: `developer.android.com/topic/architecture/data-layer`
 
-### [app/src/main/java/com/schwisolutions/librarymanagement/repository/implementation/OfflineBookRepository.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/repository/implementation/OfflineBookRepository.kt)
-- **Purpose**: Concrete repository implementation calling `BookDao`.
+### [app/src/main/java/com/schwisolutions/librarymanagement/repository/OfflineBookRepository.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/repository/OfflineBookRepository.kt)
+- **Purpose**: Concrete repository implementation delegating calls to `BookDao`.
 - **Official documentation**:
   - Search: "Repository pattern Android"
-  - Path: `developer.android.com/topic/architecture/data-layer#repository`
+  - URL: `developer.android.com/topic/architecture/data-layer#repository`
 
 ---
 
-## 4. ViewModel Layer
+## 5. ViewModel Layer
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/viewmodel/HomeViewModel.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/viewmodel/HomeViewModel.kt)
-- **Purpose**: Manages UI state for the book list and handles CRUD actions.
+- **Purpose**: Manages UI state for the book list and handles CRUD operations.
 - **Key components**:
   - `homeUiState`: Converts `bookRepository.getAllBooksStream()` into `StateFlow<HomeUiState>` via `.map { ... }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), HomeUiState())`.
-  - `addNewBook`, `updateBook`, `deleteBook`: Coroutine methods running on `viewModelScope.launch`.
-  - `AppViewModelProvider`: Factory object using `viewModelFactory { initializer { ... } }` to supply dependencies from `LibraryApplication`.
+  - `addNewBook`, `updateBook`, `deleteBook`: Coroutines launched on `viewModelScope`.
+  - `AppViewModelProvider`: Factory using `viewModelFactory { initializer { ... } }` to supply dependencies from `LibraryApplication`.
 - **Official documentation**:
   - Search: "ViewModel overview" / "StateFlow in Android" / "ViewModel factories"
-  - Path: `developer.android.com/topic/libraries/architecture/viewmodel`
-  - Path: `developer.android.com/kotlin/flow/stateflow-and-sharedflow`
-  - Path: `developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-factories`
+  - URL: `developer.android.com/topic/libraries/architecture/viewmodel`
+  - URL: `developer.android.com/kotlin/flow/stateflow-and-sharedflow`
+  - URL: `developer.android.com/topic/libraries/architecture/viewmodel/viewmodel-factories`
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/viewmodel/DetailViewModel.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/viewmodel/DetailViewModel.kt)
-- **Purpose**: ViewModel for `DetailScreen`.
-- **Key method**: `getBookStream(id: Int): Flow<Book>` delegates directly to `bookRepository.getBookStream(id)`.
+- **Purpose**: ViewModel for `DetailsScreen`.
+- **Key method**: `getBookStream(id: Int): Flow<Book>` delegates to `bookRepository.getBookStream(id)`.
 - **Official documentation**:
   - Search: "ViewModel and Flow"
-  - Path: `developer.android.com/topic/libraries/architecture/viewmodel`
+  - URL: `developer.android.com/topic/libraries/architecture/viewmodel`
 
 ---
 
-## 5. UI and Navigation Layer
+## 6. UI and Navigation Layer
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/ui/LibraryNavigation.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/ui/LibraryNavigation.kt)
-- **Purpose**: Sets up Jetpack Compose type-safe navigation.
-- **Key routes**:
+- **Purpose**: Type-safe navigation configuration.
+- **Routes**:
   - `@Serializable object PinRoute`
   - `@Serializable object MainRoute`
   - `@Serializable data class DetailsRoute(val bookId: Int)`
-- **Key mechanism**: Uses `NavHost` with `composable<PinRoute>`, `composable<MainRoute>`, and `composable<DetailsRoute>`. Extracts arguments using `backStackEntry.toRoute<DetailsRoute>()`.
+- **Mechanism**:
+  - Uses `NavHost` with `composable<PinRoute>`, `composable<MainRoute>`, and `composable<DetailsRoute>`.
+  - PIN screen pops `PinRoute` on success: `navController.navigate(MainRoute) { popUpTo(PinRoute) { inclusive = true } }`.
+  - Route arguments extracted via `backStackEntry.toRoute<DetailsRoute>()`.
 - **Official documentation**:
   - Search: "Navigation with Compose" / "Type safety in Navigation Compose"
-  - Path: `developer.android.com/guide/navigation/navigation-with-compose`
-  - Path: `developer.android.com/guide/navigation/design/type-safety`
+  - URL: `developer.android.com/guide/navigation/navigation-with-compose`
+  - URL: `developer.android.com/guide/navigation/design/type-safety`
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/ui/PinScreen.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/ui/PinScreen.kt)
 - **Purpose**: 4-digit PIN lock screen guarding app access.
 - **Key mechanisms**:
   - `rememberSaveable` for PIN state and error status.
-  - Interactive 3x4 numeric keypad (0-9, Clear, Delete).
   - 4 circular indicator dots showing entry progress.
-  - Automatic validation against `CORRECT_PIN = "1234"` triggering `onLoginSuccess()`.
+  - 3x4 keypad layout (1-9, C, 0, Backspace).
+  - Validates against `CORRECT_PIN = "1234"` and calls `onLoginSuccess()`.
 - **Official documentation**:
   - Search: "State in Jetpack Compose" / "rememberSaveable"
-  - Path: `developer.android.com/develop/ui/compose/state#save-ui-state`
+  - URL: `developer.android.com/develop/ui/compose/state#save-ui-state`
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/ui/MainScreen.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/ui/MainScreen.kt)
-- **Purpose**: Primary dashboard displaying searchable book list, Add Book dialog, Edit Book dialog, and Delete confirmation dialog.
+- **Purpose**: Primary dashboard displaying searchable book list, Add Book FAB, and BookFormDialog.
 - **Key components**:
-  - `Scaffold`: Top app bar and floating action button.
-  - `OutlinedTextField`: Search input filtering `uiState.bookList` in real time.
-  - `LazyColumn`: Recycler list of `BookListItem` components.
-  - `BookListItem`: Card with 50dp thumbnail (decoded via `BitmapFactory`), title, year, and ellipsis options menu (`DropdownMenu`).
-  - `ImageChooserDialog`: Modal to select between Camera and Gallery.
-  - `AddBookDialog` & `EditBookDialog`: Input forms with live cover preview, `ActivityResultContracts.TakePicture()` for camera, and `ActivityResultContracts.GetContent()` for gallery.
+  - `Scaffold`: Top bar and floating action button.
+  - `OutlinedTextField`: Real-time in-memory filter on `uiState.bookList`.
+  - `LazyColumn`: Renders `BookListItem` cards.
+  - `BookListItem`: Card with 50dp thumbnail (`BitmapFactory.decodeFile`), title, year, and `DropdownMenu` (View, Edit, Delete).
+  - `BookFormDialog`: Unified dialog for both Add and Edit actions:
+    - Camera capture: `rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap -> ... }`
+    - Gallery capture: `rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> ... }`
+  - `ImageChooserDialog`: Modal to select Camera or Gallery.
+  - `AlertDialog`: Confirmation prompt before deleting a book.
 - **Official documentation**:
   - Search: "Compose Scaffold" / "Lists and grids Compose" / "Dialogs Compose" / "Activity Results in Compose"
-  - Path: `developer.android.com/develop/ui/compose/components/scaffold`
-  - Path: `developer.android.com/develop/ui/compose/lists`
-  - Path: `developer.android.com/develop/ui/compose/components/dialog`
-  - Path: `developer.android.com/develop/ui/compose/libraries#activity-result`
+  - URL: `developer.android.com/develop/ui/compose/components/scaffold`
+  - URL: `developer.android.com/develop/ui/compose/lists`
+  - URL: `developer.android.com/develop/ui/compose/components/dialog`
+  - URL: `developer.android.com/develop/ui/compose/libraries#activity-result`
+  - URL: `developer.android.com/training/camera/photobasics`
 
 ### [app/src/main/java/com/schwisolutions/librarymanagement/ui/DetailScreen.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/ui/DetailScreen.kt)
 - **Purpose**: Displays full metadata and cover for a selected book.
 - **Key mechanisms**:
   - Collects `viewModel.getBookStream(bookId).collectAsState(initial = null)`.
   - Shows `CircularProgressIndicator` while loading.
-  - Renders 140dp x 180dp cover image with fallback placeholder icon.
+  - Renders 140dp x 180dp cover image with fallback `Icons.Default.Star` icon.
   - Formats title, author, publication year, and genre in a Material 3 card.
 - **Official documentation**:
   - Search: "State and Compose collectAsState" / "Card Material 3 Compose"
-  - Path: `developer.android.com/develop/ui/compose/state`
-  - Path: `developer.android.com/develop/ui/compose/components/card`
-
-### [app/src/main/java/com/schwisolutions/librarymanagement/ui/theme/](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/ui/theme/)
-- **[Color.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/ui/theme/Color.kt)**: Defines raw color values.
-- **[Type.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/ui/theme/Type.kt)**: Defines typography typography styles (`Typography`).
-- **[Theme.kt](file:///home/schwi/Projects/LibraryManagement/app/src/main/java/com/schwisolutions/librarymanagement/ui/theme/Theme.kt)**: Defines `LibraryManagementTheme` with dynamic color support (`dynamicDarkColorScheme`, `dynamicLightColorScheme`).
-- **Official documentation**:
-  - Search: "Material 3 in Compose" / "Compose theming"
-  - Path: `developer.android.com/develop/ui/compose/designsystems/material3`
+  - URL: `developer.android.com/develop/ui/compose/state`
+  - URL: `developer.android.com/develop/ui/compose/components/card`
 
 ---
 
-## 6. Unit Testing
+## 7. Unit Testing
 
 ### [app/src/test/java/com/schwisolutions/librarymanagement/ImageStorageHelperTest.kt](file:///home/schwi/Projects/LibraryManagement/app/src/test/java/com/schwisolutions/librarymanagement/ImageStorageHelperTest.kt)
 - **Purpose**: Local JVM unit tests for file deletion and error handling in `ImageStorageHelper`.
 - **Official documentation**:
   - Search: "Test in Android" / "Build local unit tests"
-  - Path: `developer.android.com/training/testing/local-tests`
+  - URL: `developer.android.com/training/testing/local-tests`
